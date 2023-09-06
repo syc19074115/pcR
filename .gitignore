@@ -1,0 +1,6 @@
+/dataset/pre_cut/*
+/dataset/pre_region/*
+/dataset/post_cut/*
+/dataset/post_region/*
+/model/*
+/runs/*
