@@ -79,6 +79,9 @@ class FeedForward(nn.Module):
     def __init__(self, in_dim, hidden_dim, out_dim=None, dropout=0.):
         super().__init__()
         # 这个前传过程其实就是几层全连接
+        """ print(in_dim)
+        print(hidden_dim)
+        print(out_dim) """
         if out_dim is None:
             out_dim = in_dim
         self.net = nn.Sequential(
@@ -90,6 +93,7 @@ class FeedForward(nn.Module):
         )
 
     def forward(self, x):
+        #print(x.shape)
         return self.net(x)
 
 
@@ -148,6 +152,9 @@ class Attention(nn.Module):
 
         if self.out_dim is not None and self.out_dim != self.dim:
             # 这个时候需要特殊处理，提前做一个残差
+            """ print(1)
+            print(v.squeeze(1).shape)
+            print(out.shape) """
             out = out + v.squeeze(1)
 
         return out
@@ -176,6 +183,7 @@ class Transformer(nn.Module):
                 x = attn(x)
             else:
                 x = attn(x) + x
+            #print(x.shape)
             x = ff(x) + x
         # print("syc--x.shape(output) = {}",x.shape)
         return x
@@ -310,35 +318,35 @@ class DiT(nn.Module):
 
         layers = []
         # layer_dim = channels
-        layer_dim = [channels * 7 * 7 * 7, 32 * 3 * 3 * 3]
+        layer_dim = [channels * 7 * 7 * 7, 64 * 3 * 3 * 3]
         #layer_dim = [7 * 7 * 7, 64 * 3 * 3 * 3]
         output_image_size = image_size
 
-        #在之前加入一个SE看看效果
-        #layers.append(SEModule_3D(in_channels=channels,reduction_ratio=4))
+        #layers.append(SEModule_3D(in_channels=channels,reduction_ratio=4))#在之前加入一个SE看看效果
         for i, (kernel_size, stride,padding) in enumerate(t2t_layers):
             # layer_dim *= kernel_size ** 2
             is_first = i == 0
             is_last = i == (len(t2t_layers) - 1)
             output_image_size = conv_output_size(
                 output_image_size, kernel_size, stride, padding)
-            # print(output_image_size)
-            #print("SYC--UNFOLD:=({},{},{})",(kernel_size,stride,stride//2)) #syc自己加的
             layers.extend([
                 #RearrangeImage() if not is_first else nn.Identity(),
                 RearrangeImage1() if not is_first else nn.Identity(),
                 #nn.Unfold(kernel_size=kernel_size,stride=stride, padding=stride // 2),
                 unfd(kernel_size, stride, padding),
                 Rearrange('b c n -> b n c'),
-                Transformer(dim=layer_dim[i], heads=1, depth=1, dim_head=32,
-                            mlp_dim=32, attn_out_dim=32, ff_out_dim=32,
+                Transformer(dim=layer_dim[i], heads=1, depth=1, dim_head=64,
+                            mlp_dim=64, attn_out_dim=64, ff_out_dim=64,
                             dropout=dropout) if not is_last else nn.Identity(),
             ])
 
-        layers.append(nn.Linear(layer_dim[1], 512))
-#         layers.append(nn.Linear(layer_dim[1], 1024))
-        layers.append(nn.AvgPool1d(kernel_size=2))
-        layers.append(SE(256,16))
+        #layers.append(nn.Linear(layer_dim[1], dim))
+        layers.append(Transformer(layer_dim[1], heads=1, depth=1, dim_head=dim,
+                            mlp_dim=dim, attn_out_dim=dim, ff_out_dim=dim,
+                            dropout=dropout))
+        layers.append(SE(dim,16))
+        #layers.append(nn.AvgPool1d(kernel_size=2))
+
 
         self.patch_emb = patch_emb
         if self.patch_emb == 'share':
@@ -348,6 +356,11 @@ class DiT(nn.Module):
             layers_after = copy.deepcopy(layers)
             self.to_patch_embedding_before = nn.Sequential(*layers_before)  # 不共用
             self.to_patch_embedding_after = nn.Sequential(*layers_after)
+
+        """
+        尝试学习一个矩阵
+        """
+        #self.mat = nn.Parameter(torch.randn(512,256))
 
         self.pos_emb = pos_emb
         if self.pos_emb == 'share':
@@ -415,6 +428,12 @@ class DiT(nn.Module):
             # print("layers_before := \t", before_x.shape) #torch.Size([3, 1024, 512])
             after_x = self.to_patch_embedding_after(after_x)
         #print(before_x.shape)
+        """  
+        尝试学习一个矩阵
+        """
+        """ before_x = torch.matmul(before_x,self.mat)
+        after_x = torch.matmul(after_x,self.mat) """
+
         b, n, _ = before_x.shape
 
         # 把cls token弄进去
@@ -638,7 +657,7 @@ class DiT_basic(nn.Module):
             if input_type == 'both':
                 self.net = DiT(image_size=64,
                                num_classes=2,
-                               dim=256,
+                               dim=128,
                                depth=None,
                                heads=None,
                                mlp_dim=None,
@@ -651,11 +670,11 @@ class DiT_basic(nn.Module):
                                pos_emb=pos_emb,
                                time_emb=time_emb,
                                use_scale=use_scale,
-                               transformer=Transformer(dim=256,
-                                                       depth=16,
+                               transformer=Transformer(dim=128,
+                                                       depth=12,
                                                        heads=16,
                                                        dim_head=64,
-                                                       mlp_dim=512),
+                                                       mlp_dim=384),
                                t2t_layers=((7, 4,2), (3, 2,1), (3, 2,1)),
                                # t2t_layers = ((7, 4, 2), (3, 2, 1), (3, (2,1,1), 1))
                                )
@@ -694,8 +713,8 @@ class DiT_basic(nn.Module):
                                                       mlp_dim=512))
 
         if self.input_type == 'both':
-            self.fc = nn.Sequential(nn.LayerNorm(256),
-                                    nn.Linear(256, 2))
+            self.fc = nn.Sequential(nn.LayerNorm(128),
+                                    nn.Linear(128, 2))
         else:
             self.fc = nn.Sequential(nn.LayerNorm(4096),
                                     nn.Linear(4096, 2))
@@ -749,6 +768,7 @@ class DiT_basic(nn.Module):
             out = self.net(before_x, after_x)
 
         out = out.view(out.shape[0], -1)
+        #print(out.shape)
         out = self.fc(out)
 
         if labels_MP is not None or labels_LNM is not None:  # training or validation process
@@ -822,7 +842,7 @@ if __name__ == '__main__':
     # print(output)
 
     #print_network(net)
-
+    net(input,input)
     flops, params = profile(net, (input, input,))
     print('flops: ', flops, 'params: ', params)
     # main()
