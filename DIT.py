@@ -61,6 +61,26 @@ def pair(t):
     # 把t变成一对输出
     return t if isinstance(t, tuple) else (t, t)
 
+class Inception(nn.Module):
+    def __init__(self, unfold1, pool, unfold2):
+        super().__init__()
+        self.unfold1_kernel = unfold1[0]
+        self.unfold1_stride = unfold1[1]
+        self.unfold1_padding = unfold1[2]
+
+        self.pool = nn.AvgPool3d(kernel_size=pool[0],stride=pool[1],padding=pool[2])
+
+        self.unfold2_kernel = unfold2[0]
+        self.unfold2_stride = unfold2[1]
+        self.unfold2_padding = unfold2[2]
+
+    def forward(self,x):
+        x1 = unfoldNd.unfoldNd(x,kernel_size=self.unfold1_kernel,stride=self.unfold1_stride,padding=self.unfold1_padding)
+        x2 = self.pool(x)
+        x2 = unfoldNd.unfoldNd(x2,kernel_size=self.unfold2_kernel,stride=self.unfold2_stride,padding=self.unfold2_padding)
+        x = torch.cat((x1,x2),dim=1)
+        #print(x.shape)
+        return x
 
 # classes
 
@@ -317,14 +337,11 @@ class DiT(nn.Module):
             'cls', 'mean'}, 'pool type must be either cls (cls token) or mean (mean pooling)'
 
         layers = []
-        # layer_dim = channels
         layer_dim = [channels * 7 * 7 * 7, 64 * 3 * 3 * 3]
-        #layer_dim = [7 * 7 * 7, 64 * 3 * 3 * 3]
         output_image_size = image_size
 
         #layers.append(SEModule_3D(in_channels=channels,reduction_ratio=4))#在之前加入一个SE看看效果
-        for i, (kernel_size, stride,padding) in enumerate(t2t_layers):
-            # layer_dim *= kernel_size ** 2
+        """ for i, (kernel_size, stride,padding) in enumerate(t2t_layers):
             is_first = i == 0
             is_last = i == (len(t2t_layers) - 1)
             output_image_size = conv_output_size(
@@ -340,13 +357,26 @@ class DiT(nn.Module):
                             dropout=dropout) if not is_last else nn.Identity(),
             ])
 
-        #layers.append(nn.Linear(layer_dim[1], dim))
-        layers.append(Transformer(layer_dim[1], heads=1, depth=1, dim_head=dim,
-                            mlp_dim=dim, attn_out_dim=dim, ff_out_dim=dim,
-                            dropout=dropout))
-        layers.append(SE(dim,16))
+        layers.append(nn.Linear(layer_dim[1], dim))
+        layers.append(SE(dim,16)) """
         #layers.append(nn.AvgPool1d(kernel_size=2))
 
+##################### inception尝试
+        layer_dim = [304 , 128]
+        for i, (unfold1, pool, unfold2) in enumerate(t2t_layers):
+            is_first = i == 0
+            is_last = i == (len(t2t_layers) - 1)
+            layers.extend([
+                RearrangeImage1() if not is_first else nn.Identity(),
+                Inception(unfold1,pool,unfold2),
+                Rearrange('b c n -> b n c'),
+                Transformer(dim=layer_dim[i], heads=1, depth=1, dim_head=64,
+                            mlp_dim=64, attn_out_dim=64, ff_out_dim=64,
+                            dropout=dropout) if not is_last else nn.Identity(),
+            ])
+        output_image_size = 4
+        layers.append(SE(dim,16))
+#########################
 
         self.patch_emb = patch_emb
         if self.patch_emb == 'share':
@@ -360,7 +390,8 @@ class DiT(nn.Module):
         """
         尝试学习一个矩阵
         """
-        #self.mat = nn.Parameter(torch.randn(512,256))
+        self.mat = nn.Parameter(torch.randn(layer_dim[1],dim))
+        self.se = SE(dim,16)
 
         self.pos_emb = pos_emb
         if self.pos_emb == 'share':
@@ -431,9 +462,11 @@ class DiT(nn.Module):
         """  
         尝试学习一个矩阵
         """
-        """ before_x = torch.matmul(before_x,self.mat)
-        after_x = torch.matmul(after_x,self.mat) """
-
+        """  before_x = torch.matmul(before_x,self.mat)
+        after_x = torch.matmul(after_x,self.mat)
+        before_x = self.se(before_x)
+        after_x = self.se(after_x)
+        """
         b, n, _ = before_x.shape
 
         # 把cls token弄进去
@@ -674,9 +707,11 @@ class DiT_basic(nn.Module):
                                                        depth=12,
                                                        heads=16,
                                                        dim_head=64,
-                                                       mlp_dim=384),
-                               t2t_layers=((7, 4,2), (3, 2,1), (3, 2,1)),
-                               # t2t_layers = ((7, 4, 2), (3, 2, 1), (3, (2,1,1), 1))
+                                                       mlp_dim=256),
+                               # t2t_layers=((7, 4,2), (3, 2,1), (3, 2,1)),
+                               t2t_layers = (([5,4,2],[3,2,1],[3,2,1]), 
+                                             ([1,2,0],[3,2,1],[1,1,0]), 
+                                             ([1,2,0],[3,2,1],[1,1,0]))
                                )
             else:
                 self.net = T2TViT(image_size=224,
@@ -738,13 +773,15 @@ class DiT_basic(nn.Module):
         print("initialize weights for network!")
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
-                nn.init.kaiming_normal_(
-                    m.weight, mode='fan_in', nonlinearity='relu')
-                # nn.init.xavier_normal_(m.weight, gain=1)
+                nn.init.kaiming_normal_(m.weight, mode='fan_in', nonlinearity='gelu')
+                # nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                # nn.init.xavier_normal_(m.weight, gain=1) #尝试其他初始化方式
                 if m.bias is not None:
                     nn.init.constant_(m.bias, 0)
             elif isinstance(m, nn.Linear):
                 trunc_normal_(m.weight, std=0.02)
+                #torch.nn.init.xavier_normal_(m.weight.data,gain=1) #尝试其他初始化方式
+                # nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
                 if m.bias is not None:
                     nn.init.constant_(m.bias, 0)
             elif isinstance(m, (nn.LayerNorm, nn.BatchNorm2d)):

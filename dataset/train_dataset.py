@@ -6,8 +6,8 @@ import sys
 import random
 from torchvision.transforms import RandomCrop
 import numpy as np
-from .transforms import Rot90, Flip, Identity, Compose
-from .transforms import RandCrop, CenterCrop, Pad,RandCrop3D,RandomRotion,RandomFlip,RandomIntensityChange
+from .transforms import Rot90, Flip, Identity, Compose, RandCrop3D, RandomShift, RandomRotion
+#from transforms import RandCrop, CenterCrop, Pad,RandCrop3D,RandomRotion,RandomFlip,RandomIntensityChange
 import SimpleITK as sitk
 import torch
 from torch.utils.data import Dataset
@@ -25,7 +25,9 @@ class Train_Dataset(Dataset):
 
         self.transforms = Compose([
             RandCrop3D((128,64,64)),
-            #RandomRotion(10),
+            RandomShift(10),
+            RandomRotion(8),
+            #RandCrop3D((128,64,64)),
             #RandomIntensityChange((0.1,0.1)),
             #RandomFlip(0)
         ])  # 数据增强就体现在这里
@@ -37,17 +39,14 @@ class Train_Dataset(Dataset):
         # print(label_region,label_cut)
         assert label_cut == label_region , "region和cut输出的label不一样"
         if self.transforms:
-            # pre_ct_array , pre_seg_array = self.transforms(pre_ct_array)
-            pre_cut_ct_array, pre_cut_seg_array = self.transforms([pre_cut_ct_array,pre_cut_seg_array])
-            pre_region_ct_array, pre_region_seg_array = self.transforms([pre_region_ct_array,pre_region_seg_array])
-            post_cut_ct_array , post_cut_seg_array = self.transforms([post_cut_ct_array,post_cut_seg_array])
-            post_region_ct_array, post_region_seg_array = self.transforms([post_region_ct_array,post_region_seg_array])
+            pre_region_ct_array,pre_region_seg_array,post_region_ct_array,post_region_seg_array = self.transforms([pre_region_ct_array,pre_region_seg_array,post_region_ct_array,post_region_seg_array])
         #这个是双通道的版本
         pre_array = np.vstack((pre_region_ct_array, pre_region_seg_array))
         #print(pre_array.shape) (2,128,64,64)
-        pre_array = self.sample(pre_array,2)
+        choice = np.random.choice([True,False])
+        pre_array = self.sample(pre_array,2,choice)
         post_array = np.vstack((post_region_ct_array, post_region_seg_array))
-        post_array = self.sample(post_array,2)
+        post_array = self.sample(post_array,2,choice)
         pre_array = torch.FloatTensor(pre_array.copy())
         post_array = torch.FloatTensor(post_array.copy())
         return pre_array, post_array, label_region
@@ -108,9 +107,12 @@ class Train_Dataset(Dataset):
         new_data = (data - mn) / sd
         return new_data
 
-    def sample(self, Array, Magnification = 2): #input = (2 , 128 , 64 , 64)
+    def sample(self, Array, Magnification = 2, choice = True): #input = (2 , 128 , 64 , 64)
         L = len(Array)
-        new_array = Array[:,::Magnification,:,:]
+        if choice:
+            new_array = Array[:,::Magnification,:,:]
+        else:
+            new_array = Array[:,1::Magnification,:,:]
         return new_array
     
 if __name__ == '__main__':
@@ -125,20 +127,21 @@ if __name__ == '__main__':
         print(label,type(label)) # tensor([1], dtype=torch.int32) <class 'torch.Tensor'>
         labels_MP = label.view(-1)
         print(labels_MP)
-        if i == 0:
+        if i != -1:
             pre = pre.numpy()
             post = post.numpy()
-            plt.subplot(161)
+            plt.subplot(141)
+            plt.axis('off')
             plt.imshow(pre[0][0][43],cmap='gray')
-            plt.subplot(162)
+            plt.subplot(142)
+            plt.axis('off')
             plt.imshow(pre[0][1][43],cmap='gray')
-            plt.subplot(163)
-            plt.imshow(pre[0][1][43],cmap='gray')
-            plt.subplot(164)
+            plt.subplot(143)
+            plt.axis('off')
             plt.imshow(post[0][0][43],cmap='gray')
-            plt.subplot(165)
+            plt.subplot(144)
+            plt.axis('off')
             plt.imshow(post[0][1][43],cmap='gray')
-            plt.subplot(166)
-            plt.imshow(post[0][1][43],cmap='gray')
-            plt.show()
-            plt.savefig('./dataset/test.jpg')
+            #plt.savefig('./dataset/test_train.jpg')
+            plt.savefig('./dataset/test_train/test_transforms-{}.jpg'.format(i))
+

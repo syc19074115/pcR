@@ -13,6 +13,7 @@ from tqdm import tqdm
 import random
 from utilis.scheduler import CosineAnnealingLRWarmup
 import time
+from utilis.pnp import EMA
 
 def randseed(args):
     torch.cuda.empty_cache()
@@ -42,9 +43,11 @@ def main():
                     output_type='probability')
     net = net.to(device)
     net.loss = net.loss.to(device)
-
+    #0print(next(net.parameters()).device) 
     ckpts = args.save_path
     os.makedirs(ckpts, exist_ok=True)
+    #ema = EMA(net, 0.999)
+    #ema.register()
 
     # data
     train_ds = train_dataset.Train_Dataset(args)
@@ -56,7 +59,7 @@ def main():
     optimizer = torch.optim.AdamW(net.parameters(),
                                   lr=args.lr,
                                   betas=(0.9, 0.999),
-                                  weight_decay=0.03)
+                                  weight_decay=0.05)
     lr_scheduler_warmup = CosineAnnealingLRWarmup(optimizer,
                                                   T_max=args.epochs,
                                                   eta_min=1.0e-9,
@@ -98,6 +101,7 @@ def main():
             total_train_acc += train_acc
             train_loss.backward()
             optimizer.step()
+            #ema.update()
             optimizer.zero_grad()  #
             # print(label)
         lr_scheduler_warmup.step()
@@ -143,6 +147,7 @@ def main():
         total_val_loss = 0
         total_val_acc = 0
         with torch.no_grad():
+            #ema.apply_shadow()
             for i, (pre, post, label) in tqdm(enumerate(val_dl), total=len(val_dl)):
                 pre = pre.to(device)
                 post = post.to(device)
@@ -151,6 +156,7 @@ def main():
                 total_val_loss += val_loss
                 total_val_acc += val_acc
                 # print(label)
+            #ema.restore()
         print("Val_loss = {}, Val_acc = {}".format(total_val_loss / len(val_dl), total_val_acc / len(val_dl)))
         if total_val_loss < best_val_loss:
             best_val_loss = total_val_loss

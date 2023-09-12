@@ -6,9 +6,10 @@ import numpy as np
 import torch
 from scipy import ndimage
 
-# from .rand import Constant, Uniform, Gaussian
+#from .rand import Constant, Uniform, Gaussian
 from .rand import Constant, Uniform, Gaussian
 from scipy.ndimage import rotate
+from scipy.ndimage.interpolation import shift
 
 
 class Base(object):
@@ -34,6 +35,8 @@ class Base(object):
             self.sample(*shape)
 
         if isinstance(img, collections.abc.Sequence):
+            #print("Base")
+            #print([(k,x.shape) for k, x in enumerate(img)])
             #print([self.tf(x, k) for k, x in enumerate(img)])
             return [self.tf(x, k) for k, x in enumerate(img)] # img:k=0,label:k=1
 
@@ -88,17 +91,18 @@ class RandomRotion(Base): #调用顺序： init-->Base（Call）-->RandomRotion(
         :param k: if x, k=0; if label, k=1
         """
         bsize = img.shape[0]
-
+        #print("bsize = ",bsize)
+        #print("k = ",k)
         for bs in range(bsize):
-            if k == 0:
+            if k == 0 or k==2:
                 # [[H,W,D], ...]
                 # print(img.shape) # (1, 128, 64, 64)
                 #channels = [rotate(img[bs,:,:,:,c], self.angle_buffer, axes=self.axes_buffer, reshape=False, order=0, mode='constant', cval=-1) for c in range(img.shape[4])]
                 #img[bs,...] = np.stack(channels, axis=-1)
-                img[bs,...] = rotate(img[bs,:,:,:],self.angle_buffer,axes=self.axes_buffer,reshape=False,order=0,mode='constant',cval=-1)
+                img[bs,...] = rotate(img[bs,:,:,:],self.angle_buffer,axes=self.axes_buffer,reshape=False,order=0,mode='constant',cval=0)
 
-            if k == 1:
-                img[bs,...] = rotate(img[bs,:,:,:],self.angle_buffer,axes=self.axes_buffer,reshape=False,order=0,mode='constant',cval=-1)
+            if k == 1 or k==3:
+                img[bs,...] = rotate(img[bs,:,:,:],self.angle_buffer,axes=self.axes_buffer,reshape=False,order=0,mode='constant',cval=0)
                 #img[bs,...] = rotate(img[bs,...], self.angle_buffer, axes=self.axes_buffer, reshape=False, order=0, mode='constant', cval=-1)
 
         return img
@@ -186,14 +190,15 @@ class CenterCrop(Base):
         # for i,s in enumerate(shape):
         #     print(i,s)
         start = [(s -size[i])//2 for i,s in enumerate(shape)]
-        # print(start)
+        #print("start = ",start)
         self.buffer = [slice(None)] + [slice(s, s+size[i]) for i,s in enumerate(start)]
         return [size] * len(shape)
 
     def tf(self, img, k=0):
-        #print("Center tf")
-        # print(img.shape)#(1, 240, 240, 155, 4)
-        # print(self.buffer)
+        """ print("Center tf")
+        print(img.shape)#(1, 240, 240, 155, 4)
+        print(self.buffer) """
+        #print(tuple(self.buffer))
         return img[tuple(self.buffer)]
         # return img[self.buffer]
 
@@ -436,14 +441,54 @@ class Compose(Base):
         ops = ', '.join([str(op) for op in self.ops])
         return 'Compose([{}])'.format(ops)
 
+###自己写的平移
+class RandomShift(Base): #调用顺序： init-->Base（Call）-->RandomRotion(sample)-->RandomRotion(tf)
+    def __init__(self,range=8):
+        assert isinstance(range,int)
+        self.range = range
+
+    def sample(self,*shape):
+        self.x_shift = random.randint(-self.range,self.range) 
+        self.y_shift = random.randint(-self.range,self.range)
+        return list(shape)
+
+    def tf(self, img, k=0):
+        """ Introduction: The rotation function supports the shape [H,W,D,C] or shape [H,W,D]
+        :param img: if x, shape is [1,H,W,D,c]; if label, shape is [1,H,W,D]
+        :param k: if x, k=0; if label, k=1
+        """
+        bsize = img.shape[0]
+        #print("shift = ({},{})".format(self.x_shift,self.y_shift))
+        for bs in range(bsize):
+            if k == 0 or k==2:
+                img[bs,...] = shift(img, shift=(0,0, int(self.x_shift), int(self.y_shift)),output=None, order=0, mode='constant',cval=0, prefilter=None)
+                #img[bs,...] = rotate(img[bs,:,:,:],self.angle_buffer,axes=self.axes_buffer,reshape=False,order=0,mode='constant',cval=0)
+
+            if k == 1 or k==3:
+                img[bs,...] = shift(img, shift=(0,0,int(self.x_shift), int(self.y_shift)), output=None, order=0, mode='constant',cval=0, prefilter=None)
+                #img[bs,...] = rotate(img[bs,:,:,:],self.angle_buffer,axes=self.axes_buffer,reshape=False,order=0,mode='constant',cval=0)
+                #img[bs,...] = rotate(img[bs,...], self.angle_buffer, axes=self.axes_buffer, reshape=False, order=0, mode='constant', cval=-1)
+
+        return img
+
+    def __str__(self):
+        return 'shift(x={},y={}'.format(self.x_shift,self.y_shift)
+###
+
+
 if __name__ == '__main__':
-    a=0
-    # nn = RandCrop3D([128, 30, 30])
-    nn = RandomRotion(10)
+    #import Image as PIL
+    #nn = CenterCrop([128, 30, 30])
+    nn = RandomShift(30)
+    nn2 = RandomRotion(10) #
     # nn = RandomIntensityChange((0.1,0.1))
     # nn = RandomFlip(0)
     # nn = NumpyType((np.float32, np.int64))
     #nn = GaussianBlur(2,Constant(1.5),-1)
-    a = np.random.rand(1,  128, 64, 64)
-    b = nn(a)
-    print(b.shape,type(b))
+    a = np.random.rand(1, 128, 64, 64)
+    b1,b2,b3,b4 = nn([a,a,a,a])
+    print(b1.shape,type(b1))
+    print(b2.shape,type(b2))
+    b = nn2((b1,b2,b1,b2))
+    print(b[0].shape,type(b[0]))
+    print(b[1].shape,type(b[1]))

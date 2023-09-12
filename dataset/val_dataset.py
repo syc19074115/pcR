@@ -6,8 +6,8 @@ import sys
 import random
 from torchvision.transforms import RandomCrop
 import numpy as np
-from .transforms import Rot90, Flip, Identity, Compose
-from .transforms import RandCrop, CenterCrop, Pad,RandCrop3D,RandomRotion,RandomFlip,RandomIntensityChange
+from .transforms import Rot90, Flip, Identity, Compose,CenterCrop
+#from .transforms import RandCrop, CenterCrop, Pad,RandCrop3D,RandomRotion,RandomFlip,RandomIntensityChange
 import SimpleITK as sitk
 import torch
 from torch.utils.data import Dataset
@@ -24,7 +24,7 @@ class Val_Dataset(Dataset):
         self.filename_list_region = self.load_file_name_list(os.path.join(args.dataset_path, 'val_path_list_region.txt'))
 
         self.transforms = Compose([
-            RandCrop3D((128,64,64)),
+            CenterCrop((128,64,64)),
             #RandomRotion(10),
             #RandomIntensityChange((0.1,0.1)),
             #RandomFlip(0)
@@ -110,11 +110,11 @@ class Val_Dataset(Dataset):
 
     def sample(self, Array, Magnification = 2): #input = (2 , 128 , 64 , 64)
         L = len(Array)
-        new_array = Array[:,::Magnification,:,:]
+        new_array = Array[:,1::Magnification,:,:]
         return new_array
 
 if __name__ == '__main__':
-    sys.path.append('../')
+    sys.path.append('./')
     from config import args
     # print(os.getcwd())
     val_ds = Val_Dataset(args)
@@ -125,19 +125,20 @@ if __name__ == '__main__':
         print(label,type(label)) # tensor([1], dtype=torch.int32) <class 'torch.Tensor'>
         labels_MP = label.view(-1)
         print(labels_MP)
-        if i == 0:
+        if i != -1:
             pre = pre.numpy()
             post = post.numpy()
-            plt.subplot(161)
-            plt.imshow(pre[0][0][43])
-            plt.subplot(162)
-            plt.imshow(pre[0][1][43])
-            plt.subplot(163)
-            plt.imshow(pre[0][2][43])
-            plt.subplot(164)
-            plt.imshow(post[0][0][43])
-            plt.subplot(165)
-            plt.imshow(post[0][1][43])
-            plt.subplot(166)
-            plt.imshow(post[0][2][43])
-            plt.show()
+            plt.subplot(141)
+            plt.axis('off')
+            plt.imshow(pre[0][0][43],cmap='gray')
+            plt.subplot(142)
+            plt.axis('off')
+            plt.imshow(pre[0][1][43],cmap='gray')
+            plt.subplot(143)
+            plt.axis('off')
+            plt.imshow(post[0][0][43],cmap='gray')
+            plt.subplot(144)
+            plt.axis('off')
+            plt.imshow(post[0][1][43],cmap='gray')
+            #plt.savefig('./dataset/test_train.jpg')
+            plt.savefig('./dataset/test_val/test_val-{}.jpg'.format(i))
