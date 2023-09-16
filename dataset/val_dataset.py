@@ -20,11 +20,11 @@ class Val_Dataset(Dataset):
         self.args = args
 
         # self.filename_list = self.load_file_name_list('./train_path_list_cut.txt')#test
-        self.filename_list_cut = self.load_file_name_list(os.path.join(args.dataset_path, 'val_path_list_cut.txt'))
-        self.filename_list_region = self.load_file_name_list(os.path.join(args.dataset_path, 'val_path_list_region.txt'))
+        #self.filename_list_cut = self.load_file_name_list(os.path.join(args.dataset_path, 'val_path_list_cut.txt'))
+        self.filename_list_region = self.load_file_name_list(os.path.join(args.dataset_path, 'val_path_list.txt'))
 
         self.transforms = Compose([
-            CenterCrop((128,64,64)),
+            CenterCrop((64,64,64)),
             #RandomRotion(10),
             #RandomIntensityChange((0.1,0.1)),
             #RandomFlip(0)
@@ -32,28 +32,28 @@ class Val_Dataset(Dataset):
 
 
     def __getitem__(self, index):
-        pre_cut_ct_array, pre_cut_seg_array, post_cut_ct_array, post_cut_seg_array, label_cut = self.load_cut_or_region_array(self.filename_list_cut,index)
-        pre_region_ct_array, pre_region_seg_array, post_region_ct_array, post_region_seg_array, label_region = self.load_cut_or_region_array(self.filename_list_cut,index)
+        #pre_cut_ct_array, pre_cut_seg_array, post_cut_ct_array, post_cut_seg_array, label_cut = self.load_cut_or_region_array(self.filename_list_cut,index)
+        pre_region_ct_array, pre_region_seg_array, post_region_ct_array, post_region_seg_array, label_region = self.load_cut_or_region_array(self.filename_list_region,index)
         # print(label_region,label_cut)
-        assert label_cut == label_region , "region和cut输出的label不一样"
+        #assert label_cut == label_region , "region和cut输出的label不一样"
         if self.transforms:
             # pre_ct_array , pre_seg_array = self.transforms(pre_ct_array)
-            pre_cut_ct_array, pre_cut_seg_array = self.transforms([pre_cut_ct_array,pre_cut_seg_array])
+            #pre_cut_ct_array, pre_cut_seg_array = self.transforms([pre_cut_ct_array,pre_cut_seg_array])
             pre_region_ct_array, pre_region_seg_array = self.transforms([pre_region_ct_array,pre_region_seg_array])
-            post_cut_ct_array , post_cut_seg_array = self.transforms([post_cut_ct_array,post_cut_seg_array])
+            #post_cut_ct_array , post_cut_seg_array = self.transforms([post_cut_ct_array,post_cut_seg_array])
             post_region_ct_array, post_region_seg_array = self.transforms([post_region_ct_array,post_region_seg_array])
         #这个是双通道的版本
         pre_array = np.vstack((pre_region_ct_array, pre_region_seg_array))
-        #print(pre_array.shape) (2,128,64,64)
-        pre_array = self.sample(pre_array,2)
+        choice = np.random.choice([True,False])
+        pre_array = self.sample(pre_array,2,choice)
         post_array = np.vstack((post_region_ct_array, post_region_seg_array))
-        post_array = self.sample(post_array,2)
+        post_array = self.sample(post_array,2,choice)
         pre_array = torch.FloatTensor(pre_array.copy())
         post_array = torch.FloatTensor(post_array.copy())
         return pre_array, post_array, label_region
 
     def __len__(self):
-        return len(self.filename_list_cut)
+        return len(self.filename_list_region)
 
     def load_cut_or_region_array(self, filename_list,index):
         ct_pre = sitk.ReadImage(filename_list[index][0].replace('\\', '/').replace('cut','region'), sitk.sitkFloat32)
@@ -108,9 +108,12 @@ class Val_Dataset(Dataset):
         new_data = (data - mn) / sd
         return new_data
 
-    def sample(self, Array, Magnification = 2): #input = (2 , 128 , 64 , 64)
+    def sample(self, Array, Magnification = 2, choice = True): #input = (2 , 128 , 64 , 64)
         L = len(Array)
-        new_array = Array[:,1::Magnification,:,:]
+        if choice:
+            new_array = Array[:,::Magnification,:,:]
+        else:
+            new_array = Array[:,1::Magnification,:,:]
         return new_array
 
 if __name__ == '__main__':

@@ -1,5 +1,5 @@
 from torch.utils.tensorboard import SummaryWriter
-from DIT import DiT_basic
+from runing_model.DIT import DiT_basic
 from dataset import train_dataset, val_dataset
 import config
 import os

@@ -1,5 +1,5 @@
 import numpy as np
-from sklearn.metrics import roc_auc_score, f1_score, accuracy_score, recall_score, precision_score, roc_curve, confusion_matrix
+from sklearn.metrics import roc_auc_score, f1_score, accuracy_score, recall_score, precision_score, roc_curve, confusion_matrix,matthews_corrcoef
 from _collections import OrderedDict
 
 def evaluate(y_true, y_pred, digits=4, cutoff='auto'):
@@ -26,6 +26,10 @@ def evaluate(y_true, y_pred, digits=4, cutoff='auto'):
 
     evaluation = OrderedDict()
     tn, fp, fn, tp = confusion_matrix(y_true, y_pred_t).ravel()
+    evaluation['TP'] =tp
+    evaluation['FN'] =tn
+    evaluation['FP'] =fp
+    evaluation['TN'] =tn
     evaluation['auc'] = round(roc_auc_score(y_true, y_pred), digits)
     evaluation['acc'] = round(accuracy_score(y_true, y_pred_t), digits)
     evaluation['recall'] = round(recall_score(y_true, y_pred_t), digits)

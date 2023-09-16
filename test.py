@@ -1,5 +1,5 @@
 # -- coding: utf-8 --
-from DIT import DiT_basic
+from work_model.DIT import DiT_basic
 from dataset import train_dataset,val_dataset
 import config
 from torch.utils.data import DataLoader
@@ -11,10 +11,11 @@ from sklearn.metrics import precision_recall_fscore_support,roc_auc_score,matthe
 from utilis.metrics import evaluate as Eva
 if __name__ == '__main__':
     args = config.args
-    save_path = args.save_path
-    device = args.gpu_id
+    save_path = './model/model22'
+    #device = args.gpu_id
+    device = 'cpu'
     net = DiT_basic(basic_model='t2t',  # 使用vit还是t2t vit只支持both 因为其他的不需要消融探究
-                    patch_emb='isolated',
+                    #patch_emb='isolated',
                     time_emb=True,
                     pos_emb='share',
                     use_scale=True,
@@ -26,7 +27,8 @@ if __name__ == '__main__':
     test_ds = val_dataset.Val_Dataset(args)
     test_dl = DataLoader(dataset=test_ds,batch_size=1,num_workers=args.n_threads,shuffle=False)
     ##
-    ckpt = torch.load('{}/Dit_330.pth'.format(save_path))
+    ckpt = torch.load('{}/model_last.pth'.format(save_path),map_location=device)
+    #ckpt = torch.load('{}/best_val.pth'.format(save_path),map_location=device)
     net.load_state_dict(ckpt['net'])
     '''10(有变化)
     tensor([[[-0.2725,  0.6177, -0.7709,  ..., -0.3871, -1.4804,  0.8689],
@@ -48,6 +50,8 @@ if __name__ == '__main__':
     net.eval()
     with torch.no_grad():
         for i, (pre, post, label) in tqdm(enumerate(test_dl),total=len(test_dl)):
+            pre = pre.to(device)
+            post = post.to(device)
             out = net(pre,post,None,None)
             # print(out.shape) #(1,2)
             prob = nn.Softmax(dim=1)(out)

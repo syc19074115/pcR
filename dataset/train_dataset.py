@@ -6,7 +6,7 @@ import sys
 import random
 from torchvision.transforms import RandomCrop
 import numpy as np
-from .transforms import Rot90, Flip, Identity, Compose, RandCrop3D, RandomShift, RandomRotion
+from .transforms import Rot90, Flip, Identity, Compose, RandCrop3D, RandomShift, RandomRotion ,CenterCrop,RandomFlip
 #from transforms import RandCrop, CenterCrop, Pad,RandCrop3D,RandomRotion,RandomFlip,RandomIntensityChange
 import SimpleITK as sitk
 import torch
@@ -20,25 +20,27 @@ class Train_Dataset(Dataset):
         self.args = args
 
         # self.filename_list = self.load_file_name_list('./train_path_list_cut.txt')#test
-        self.filename_list_cut = self.load_file_name_list(os.path.join(args.dataset_path, 'train_path_list_cut.txt'))
-        self.filename_list_region = self.load_file_name_list(os.path.join(args.dataset_path, 'train_path_list_region.txt'))
-
+        #self.filename_list_cut = self.load_file_name_list(os.path.join(args.dataset_path, 'train_path_list_cut.txt'))
+        #self.filename_list_region = self.load_file_name_list(os.path.join(args.dataset_path, 'train_path_list_region.txt'))
+        self.filename_list_region = self.load_file_name_list(os.path.join(args.dataset_path, 'train_path_list.txt'))
+        #self.Centercrop = CenterCrop([36,70,70])
         self.transforms = Compose([
-            RandCrop3D((128,64,64)),
-            RandomShift(10),
-            RandomRotion(8),
-            #RandCrop3D((128,64,64)),
+            #RandomShift(2),
+            RandCrop3D((64,64,64)),
+            RandomShift(2),
+            RandomRotion(2),
             #RandomIntensityChange((0.1,0.1)),
             #RandomFlip(0)
         ])  # 数据增强就体现在这里
 
 
     def __getitem__(self, index):
-        pre_cut_ct_array, pre_cut_seg_array, post_cut_ct_array, post_cut_seg_array, label_cut = self.load_cut_or_region_array(self.filename_list_cut,index)
-        pre_region_ct_array, pre_region_seg_array, post_region_ct_array, post_region_seg_array, label_region = self.load_cut_or_region_array(self.filename_list_cut,index)
+        #pre_cut_ct_array, pre_cut_seg_array, post_cut_ct_array, post_cut_seg_array, label_cut = self.load_cut_or_region_array(self.filename_list_cut,index)
+        pre_region_ct_array, pre_region_seg_array, post_region_ct_array, post_region_seg_array, label_region = self.load_cut_or_region_array(self.filename_list_region,index)
         # print(label_region,label_cut)
-        assert label_cut == label_region , "region和cut输出的label不一样"
+        #assert label_cut == label_region , "region和cut输出的label不一样"
         if self.transforms:
+            #pre_region_ct_array,pre_region_seg_array,post_region_ct_array,post_region_seg_array = self.Centercrop([pre_region_ct_array,pre_region_seg_array,post_region_ct_array,post_region_seg_array])
             pre_region_ct_array,pre_region_seg_array,post_region_ct_array,post_region_seg_array = self.transforms([pre_region_ct_array,pre_region_seg_array,post_region_ct_array,post_region_seg_array])
         #这个是双通道的版本
         pre_array = np.vstack((pre_region_ct_array, pre_region_seg_array))
@@ -52,7 +54,7 @@ class Train_Dataset(Dataset):
         return pre_array, post_array, label_region
 
     def __len__(self):
-        return len(self.filename_list_cut)
+        return len(self.filename_list_region)
 
     def load_cut_or_region_array(self, filename_list,index):
         ct_pre = sitk.ReadImage(filename_list[index][0].replace('\\', '/').replace('cut','region'), sitk.sitkFloat32)
@@ -132,16 +134,16 @@ if __name__ == '__main__':
             post = post.numpy()
             plt.subplot(141)
             plt.axis('off')
-            plt.imshow(pre[0][0][43],cmap='gray')
+            plt.imshow(pre[0][0][25],cmap='gray')
             plt.subplot(142)
             plt.axis('off')
-            plt.imshow(pre[0][1][43],cmap='gray')
+            plt.imshow(pre[0][1][25],cmap='gray')
             plt.subplot(143)
             plt.axis('off')
-            plt.imshow(post[0][0][43],cmap='gray')
+            plt.imshow(post[0][0][25],cmap='gray')
             plt.subplot(144)
             plt.axis('off')
-            plt.imshow(post[0][1][43],cmap='gray')
+            plt.imshow(post[0][1][25],cmap='gray')
             #plt.savefig('./dataset/test_train.jpg')
             plt.savefig('./dataset/test_train/test_transforms-{}.jpg'.format(i))
 

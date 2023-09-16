@@ -1,10 +1,11 @@
 from torch.utils.tensorboard import SummaryWriter
-from DIT import DiT_basic
+from work_model.DIT import DiT_basic
+from work_model.resDIT import resDiT
 from dataset import train_dataset, val_dataset
 import config
 import os
 
-os.environ['CUDA_VISIBLE_DEVICES']='3' 
+os.environ['CUDA_VISIBLE_DEVICES']='2'
 os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'max_split_size_mb:32'
 import numpy as np
 from torch.utils.data import DataLoader
@@ -14,6 +15,7 @@ import random
 from utilis.scheduler import CosineAnnealingLRWarmup
 import time
 from utilis.pnp import EMA
+from work_model.DIT import DiT_basic
 
 def randseed(args):
     torch.cuda.empty_cache()
@@ -22,7 +24,16 @@ def randseed(args):
     torch.cuda.manual_seed(args.seed)
     torch.cuda.manual_seed_all(args.seed)
     np.random.seed(args.seed)
+    #cudnn.deterministic = True
 
+def l1_norm(model,lamda,classify_loss):
+    regularization_loss = 0
+    for param in model.parameters():
+        regularization_loss += torch.sum(abs(param))
+    
+    #calssify_loss = criterion(pred,target)
+    loss = classify_loss + lamda * regularization_loss
+    return loss
 
 def main():
     args = config.args
@@ -32,15 +43,35 @@ def main():
     device = torch.device('cpu' if args.cpu else 'cuda')
     # device = "cpu"
     print(device)
-    net = DiT_basic(basic_model='t2t',  # 使用vit还是t2t vit只支持both 因为其他的不需要消融探究
-                    patch_emb='isolated',
-                    time_emb=True,
-                    pos_emb='share',
-                    use_scale=True,
-                    loss_f='ce',  # ce  # focal of ce
-                    input_type='both',
-                    pool='cls',
-                    output_type='probability')
+    if args.model == 'resDiT':
+        print("resDiT")
+        net = resDiT(basic_model='t2t',  # 使用vit还是t2t vit只支持both 因为其他的不需要消融探究
+                        patch_emb='isolated',
+                        #patch_emb='share',
+                        time_emb=True,
+                        pos_emb='share',
+                        use_scale=True,
+                        #use_scale=False,
+                        loss_f='ce',  # ce  # focal of ce
+                        input_type='both',
+                        pool='cls',
+                        #pool='mean',
+                        output_type='probability')
+    else:
+        print("DiT")
+        net = DiT_basic(basic_model='t2t',  # 使用vit还是t2t vit只支持both 因为其他的不需要消融探究
+                        patch_emb='isolated',
+                        #patch_emb='share',
+                        time_emb=True,
+                        pos_emb='share',
+                        use_scale=True,
+                        #use_scale=False,
+                        loss_f='ce',  # ce  # focal of ce
+                        input_type='both',
+                        pool='cls',
+                        #pool='mean',
+                        output_type='probability')
+
     net = net.to(device)
     net.loss = net.loss.to(device)
     #0print(next(net.parameters()).device) 
@@ -59,13 +90,13 @@ def main():
     optimizer = torch.optim.AdamW(net.parameters(),
                                   lr=args.lr,
                                   betas=(0.9, 0.999),
-                                  weight_decay=0.05)
+                                  weight_decay=0.03)
     lr_scheduler_warmup = CosineAnnealingLRWarmup(optimizer,
                                                   T_max=args.epochs,
-                                                  eta_min=1.0e-9,
+                                                  eta_min=1.0e-6, #1.0e-6
                                                   last_epoch=-1,
                                                   warmup_steps=args.warmup,
-                                                  warmup_start_lr=1.0e-6)
+                                                  warmup_start_lr=1.0e-9)
     optimizer.zero_grad()  #
 
     begin_epoch = 0
@@ -99,10 +130,11 @@ def main():
             train_loss, train_acc = net(pre, post, label, label)
             total_train_loss += train_loss
             total_train_acc += train_acc
+            train_loss = l1_norm(net,args.lamda,train_loss)
+            optimizer.zero_grad()  #
             train_loss.backward()
             optimizer.step()
             #ema.update()
-            optimizer.zero_grad()  #
             # print(label)
         lr_scheduler_warmup.step()
 
